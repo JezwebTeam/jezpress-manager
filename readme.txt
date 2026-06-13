@@ -4,7 +4,7 @@ Tags: jezpress, dashboard, plugin management, license management
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.1
-Stable tag: 1.1.3
+Stable tag: 1.1.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -55,6 +55,9 @@ Yes. JezPress plugins are designed to work independently. The manager simply pro
 
 == Changelog ==
 
+= 1.1.4 =
+* Security: Hardened the dashboard plugin activate/deactivate AJAX handler against path traversal - the plugin_file parameter is now normalised with plugin_basename() and validated with validate_plugin() before any filesystem access.
+
 = 1.1.3 =
 * Changed: Minimum PHP requirement lowered from 8.2 to 8.1 for broader compatibility
 
@@ -79,6 +82,9 @@ Yes. JezPress plugins are designed to work independently. The manager simply pro
 * Support and quick links section
 
 == Upgrade Notice ==
+
+= 1.1.4 =
+Security hardening for the dashboard plugin activate/deactivate control. Recommended update.
 
 = 1.1.3 =
 Now supports PHP 8.1 for broader server compatibility.

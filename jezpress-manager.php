@@ -3,7 +3,7 @@
  * Plugin Name: JezPress Manager
  * Plugin URI: https://jezpress.com
  * Description: Central dashboard for managing all JezPress plugins, licenses, and support.
- * Version: 1.1.3
+ * Version: 1.1.4
  * Author: JezPress
  * Author URI: https://jezpress.com
  * License: GPL-2.0+
@@ -21,7 +21,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Plugin constants
  */
-define( 'JEZPRESS_MANAGER_VERSION', '1.1.3' );
+define( 'JEZPRESS_MANAGER_VERSION', '1.1.4' );
 define( 'JEZPRESS_MANAGER_PLUGIN_FILE', __FILE__ );
 define( 'JEZPRESS_MANAGER_PLUGIN_PATH', plugin_dir_path( __FILE__ ) );
 define( 'JEZPRESS_MANAGER_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
