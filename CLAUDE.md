@@ -244,15 +244,22 @@ jezpress-manager.zip
 
 ## Google Chat Notifications
 
-When asked to "send release to Google Chat" or "notify Google Chat about release", use the **Jezweb Releases** webhook. The URL (with API key + space token) is a secret — do NOT commit it here. Retrieve it from `.jez/secrets/google-chat-webhooks.md` (or ask Jez) and use it as `WEBHOOK_URL` below.
+When asked to "send release to Google Chat" or "notify Google Chat about release", use the **Jezweb Releases** webhook. The URL (with API key + space token) is a secret — **never commit it to this or any repo file**. Read it at run-time from the git-ignored memory file:
+
+```bash
+WEBHOOK_URL="$(grep -oP 'https://chat\.googleapis\.com/\S+' ~/.claude/memory/jezpress-google-chat-webhook.md | head -n1)"
+```
+
+**Per-release approval required:** even with the URL in hand, do NOT post a release card without explicit per-release approval from Abner.
 
 ### How to Send Release Notification
 
 1. Extract changelog for the version from `readme.txt`
-2. Send a POST request with a formatted card:
+2. Load `WEBHOOK_URL` using the one-liner above
+3. Send a POST request with a formatted card:
 
 ```bash
-curl -X POST "WEBHOOK_URL" \
+curl -X POST "$WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   -d '{
     "cardsV2": [{
