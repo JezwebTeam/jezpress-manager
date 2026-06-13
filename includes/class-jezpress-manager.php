@@ -294,6 +294,15 @@ class JezPress_Manager {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 
+		// Strip any path-traversal components and confirm the value is a real
+		// plugin basename before touching the filesystem. sanitize_text_field()
+		// leaves "/" and "." intact, so "../../wp-config.php" would otherwise
+		// survive and let file_exists() probe arbitrary paths.
+		$plugin_file = plugin_basename( $plugin_file );
+		if ( is_wp_error( validate_plugin( $plugin_file ) ) ) {
+			wp_send_json_error( array( 'message' => __( 'Invalid plugin file.', 'jezpress-manager' ) ), 400 );
+		}
+
 		// Validate that the plugin file actually exists in the plugins directory.
 		$plugin_path = WP_PLUGIN_DIR . '/' . $plugin_file;
 		if ( ! file_exists( $plugin_path ) ) {
