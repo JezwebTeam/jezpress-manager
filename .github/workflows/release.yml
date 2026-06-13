@@ -1,0 +1,229 @@
+name: Release
+
+# Triggered by pushing an annotated tag matching `v*.*.*`.
+#
+# Steps:
+#   1. Verify the tag version matches the plugin header, JEZPRESS_MANAGER_VERSION
+#      constant, and readme.txt's Stable tag.
+#   2. Build a release zip (forward-slash paths, dev-only files excluded).
+#   3. Extract the changelog section for this version from readme.txt.
+#   4. Create a GitHub release with the zip attached.
+#   5. If the JEZPRESS_TOKEN repo secret is set: install the JezPress CLI,
+#      run preflight, upload to the stable channel.
+#   6. If the GCHAT_WEBHOOK_URL repo secret is set: post a notification card.
+#
+# Required secrets (set via `gh secret set <NAME>` or the GitHub UI):
+#   - JEZPRESS_TOKEN   — the contents of your local `~/.jezpress-token` file
+#   - GCHAT_WEBHOOK_URL — full webhook URL (the `?key=...&token=...` form)
+#
+# Both are optional. If a secret is missing, the corresponding step is
+# skipped and the workflow still produces a GitHub release.
+#
+# NOTE: GCHAT_WEBHOOK_URL is deliberately left UNSET on this repo so the
+# workflow never auto-announces — release notifications to Google Chat
+# require manual per-release approval.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write  # required for gh release create
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$TAG_VERSION"
+
+      - name: Verify version consistency
+        run: |
+          TAG="${{ steps.version.outputs.version }}"
+
+          HEADER=$(grep -oP "^\s*\*\s*Version:\s*\K[0-9.]+" jezpress-manager.php | head -n1)
+          CONST=$(grep -oP "JEZPRESS_MANAGER_VERSION'\s*,\s*'\K[0-9.]+" jezpress-manager.php | head -n1)
+          STABLE=$(grep -oP "^Stable tag:\s*\K[0-9.]+" readme.txt | head -n1)
+
+          fail=0
+          if [ "$HEADER" != "$TAG" ]; then echo "::error::Plugin header version '$HEADER' != tag '$TAG'"; fail=1; fi
+          if [ "$CONST" != "$TAG" ];  then echo "::error::JEZPRESS_MANAGER_VERSION constant '$CONST' != tag '$TAG'"; fail=1; fi
+          if [ "$STABLE" != "$TAG" ]; then echo "::error::readme.txt Stable tag '$STABLE' != tag '$TAG'"; fail=1; fi
+          if [ "$fail" = "1" ]; then exit 1; fi
+          echo "Versions match: $TAG"
+
+      - name: Build release zip
+        id: build
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          STAGING=$(mktemp -d)
+          PLUGIN="$STAGING/jezpress-manager"
+          mkdir -p "$PLUGIN"
+
+          # Copy everything except dev-only artefacts.
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.gitignore' \
+            --exclude='.gitattributes' \
+            --exclude='.claude' \
+            --exclude='CLAUDE.md' \
+            --exclude='PLAN.md' \
+            --exclude='README.md' \
+            --exclude='*.zip' \
+            ./ "$PLUGIN/"
+
+          ZIP="$GITHUB_WORKSPACE/jezpress-manager-$VERSION.zip"
+          (cd "$STAGING" && zip -rq "$ZIP" jezpress-manager)
+
+          echo "zip_path=$ZIP" >> "$GITHUB_OUTPUT"
+          ls -lh "$ZIP"
+          unzip -l "$ZIP" | head -5
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Pull the lines under `= $VERSION =` up to the next `= x.y.z =`
+          # heading in readme.txt. Falls back to a one-liner if not found.
+          awk -v v="= $VERSION =" '
+            $0 == v { flag=1; next }
+            flag && /^= [0-9]+\.[0-9]+\.[0-9]+ =/ { flag=0 }
+            flag { print }
+          ' readme.txt > /tmp/changelog.md
+
+          if [ ! -s /tmp/changelog.md ]; then
+            echo "Release $VERSION." > /tmp/changelog.md
+          fi
+
+          # Wrap with a header and a footer link.
+          {
+            echo "## Changelog"
+            echo
+            cat /tmp/changelog.md
+            echo
+            echo "---"
+            echo "🤖 Released via the [release.yml](.github/workflows/release.yml) GitHub Actions workflow."
+          } > /tmp/notes.md
+
+          echo "Notes:"
+          cat /tmp/notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" \
+            "${{ steps.build.outputs.zip_path }}" \
+            --title "v${{ steps.version.outputs.version }}" \
+            --notes-file /tmp/notes.md
+
+      - name: Detect optional secrets
+        id: secrets
+        env:
+          JEZPRESS_TOKEN: ${{ secrets.JEZPRESS_TOKEN }}
+          GCHAT_WEBHOOK_URL: ${{ secrets.GCHAT_WEBHOOK_URL }}
+        run: |
+          if [ -n "$JEZPRESS_TOKEN" ]; then
+            echo "has_jezpress=true" >> "$GITHUB_OUTPUT"
+            echo "JezPress upload: enabled"
+          else
+            echo "JezPress upload: skipped (set JEZPRESS_TOKEN secret to enable)"
+          fi
+          if [ -n "$GCHAT_WEBHOOK_URL" ]; then
+            echo "has_gchat=true" >> "$GITHUB_OUTPUT"
+            echo "Google Chat notification: enabled"
+          else
+            echo "Google Chat notification: skipped (set GCHAT_WEBHOOK_URL secret to enable)"
+          fi
+
+      - name: Setup Node (for jezpress CLI)
+        if: steps.secrets.outputs.has_jezpress == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Upload to JezPress
+        if: steps.secrets.outputs.has_jezpress == 'true'
+        env:
+          JEZPRESS_TOKEN: ${{ secrets.JEZPRESS_TOKEN }}
+        run: |
+          npm install -g @jezweb/jezpress-cli
+          # CLI reads ~/.jezpress-token by convention.
+          printf '%s' "$JEZPRESS_TOKEN" > "$HOME/.jezpress-token"
+          chmod 600 "$HOME/.jezpress-token"
+
+          jezpress whoami
+
+          jezpress plugins preflight jezpress-manager \
+            "${{ steps.build.outputs.zip_path }}"
+
+          jezpress plugins upload jezpress-manager \
+            "${{ steps.build.outputs.zip_path }}"
+
+          # Don't leave the token on the runner filesystem.
+          rm -f "$HOME/.jezpress-token"
+
+      - name: Notify Google Chat
+        if: steps.secrets.outputs.has_gchat == 'true'
+        env:
+          WEBHOOK: ${{ secrets.GCHAT_WEBHOOK_URL }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Bash-safe JSON build via printf; webhook expects cardsV2.
+          GH_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}"
+          JEZPRESS_URL="https://admin.jezpress.com/dashboard/plugins/jezpress-manager"
+          DOWNLOAD_URL="https://admin.jezpress.com/api/update-server/plugins/jezpress-manager/download?version=${VERSION}"
+
+          BODY=$(cat <<JSON
+          {
+            "cardsV2": [
+              {
+                "cardId": "release-jpm-${VERSION}",
+                "card": {
+                  "header": {
+                    "title": "JezPress Manager",
+                    "subtitle": "Version ${VERSION} Released"
+                  },
+                  "sections": [
+                    {
+                      "header": "Release",
+                      "widgets": [
+                        {
+                          "textParagraph": {
+                            "text": "Released via GitHub Actions on push of tag <b>v${VERSION}</b>."
+                          }
+                        },
+                        {
+                          "buttonList": {
+                            "buttons": [
+                              { "text": "GitHub Release", "onClick": { "openLink": { "url": "${GH_URL}" } } },
+                              { "text": "View Plugin",    "onClick": { "openLink": { "url": "${JEZPRESS_URL}" } } },
+                              { "text": "Download Latest", "onClick": { "openLink": { "url": "${DOWNLOAD_URL}" } } }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+          JSON
+          )
+
+          curl --fail-with-body -s -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json; charset=UTF-8' \
+            -d "$BODY"
