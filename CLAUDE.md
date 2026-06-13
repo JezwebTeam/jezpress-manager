@@ -244,11 +244,7 @@ jezpress-manager.zip
 
 ## Google Chat Notifications
 
-When asked to "send release to Google Chat" or "notify Google Chat about release", use this webhook:
-
-```
-https://chat.googleapis.com/v1/spaces/AAAAKOHCsJ4/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=3UggH2zwGHV_GWT-AueML6OHLsqF7iLRAnyOh6EAXSo
-```
+When asked to "send release to Google Chat" or "notify Google Chat about release", use the **Jezweb Releases** webhook. The URL (with API key + space token) is a secret — do NOT commit it here. Retrieve it from `.jez/secrets/google-chat-webhooks.md` (or ask Jez) and use it as `WEBHOOK_URL` below.
 
 ### How to Send Release Notification
 
