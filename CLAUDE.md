@@ -1,5 +1,14 @@
 # CLAUDE.md - JezPress Manager
 
+## Reusable standards (auto-loaded)
+
+@.claude/build-playbook.md
+@.claude/scaffold-standard.md
+
+> Phase-specific docs load on demand: `.claude/updater-contract.md` (updater work), `.claude/audit-guide.md` (every audit gate). The release pipeline is the **`/release` skill** (`.claude/skills/release/`). A committed `jezpress-code-reviewer` subagent lives in `.claude/agents/`, `.claude/LEDGER.md` is the per-version release + audit log, and the repo-root `PLAN.md` carries the current build plan (1.2.0 dashboard rebuild, 1.3.0 Site info + contract fields, Licences page deferred).
+>
+> **These are the free-plugin variants.** JezPress Manager has no licence layer — no licence class, option, cron or key, and no `license_key` on any request. The `license_status` / `license_expiry` fields in `JezPress_Manager::register()` are display-only values other plugins pass in. Don't reinstate licence code from another plugin's bundle.
+
 ## Project Overview
 
 **Plugin Name:** JezPress Manager
