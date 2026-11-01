@@ -8,3 +8,7 @@
 
 # Playwright MCP browser session artefacts (screenshots, console logs) from local runtime checks.
 .playwright-mcp/
+
+# Internal Claude Code bundle (audit guides, release skill, scripts, ledger).
+# Kept local only - this is a public repo.
+.claude/
