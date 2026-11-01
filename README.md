@@ -97,20 +97,25 @@ function my_plugin_register_with_manager() {
 | `menu_title` | string | Yes | Short title for the submenu |
 | `capability` | string | No | Required capability (default: `manage_options`) |
 | `callback` | callable | No | Settings page render callback |
-| `license_status` | string | No | `active`, `expired`, `invalid`, or empty |
-| `license_expiry` | string | No | Expiry date string |
+| `license_status` | string | No | `active`, `expired`, `invalid`, `inactive`, or empty (no key). Anything else is treated as empty. |
+| `license_expiry` | string | No | Expiry date, any `strtotime()`-parsable string (e.g. `2026-12-31`). Drives the "Expires in N days" state. |
 | `description` | string | No | Short plugin description |
 | `icon` | string | No | Dashicon class (default: `dashicons-admin-plugins`) |
 | `position` | int | No | Menu order - lower number appears first (default: `10`) |
+| `plugin_file` | string | No | Plugin basename, e.g. `my-plugin/my-plugin.php`. Lets the Manager find the plugin when the slug is not the folder name (since 1.2.0) |
 
 ### License Status Values
 
-| Value | Display | Description |
-|-------|---------|-------------|
-| `active` | Green badge | License is valid and active |
-| `expired` | Yellow badge + Renew link | License has expired |
-| `invalid` | Red badge | License key is invalid |
-| (empty) | Gray "Not Set" | No license configured |
+The Manager renders the status each plugin reports and links to that plugin's own settings page. It never stores or validates a key itself.
+
+| Value | Display | Next step shown |
+|-------|---------|-----------------|
+| `active` | Green "Active" + expiry date (a past expiry date renders as Expired) | None |
+| `active` with expiry within 30 days | Amber "Expires in N days" | Renew in settings |
+| `expired` | Amber "Expired" | Renew in settings |
+| `inactive` | Amber "Not activated" (no active licence; template-built plugins report this whether or not a key was entered) | Activate in settings |
+| `invalid` | Red "Invalid key" + inline note | Fix in settings |
+| (empty) | "No key" | Add key in settings |
 
 ## Menu Structure
 
@@ -146,6 +151,14 @@ if ( class_exists( 'JezPress_Manager' ) ) {
 $plugins = JezPress_Manager::get_plugins();
 ```
 
+### Check if a Slug is Registered
+
+```php
+if ( JezPress_Manager::has_plugin( 'my-plugin-slug' ) ) {
+    // The Manager owns this plugin's menu entry.
+}
+```
+
 ### Deregister a Plugin
 
 ```php
@@ -163,6 +176,14 @@ None currently.
 None currently.
 
 ## Changelog
+
+### 1.2.0
+- Redesigned dashboard: header with Check for updates and Update all, attention banner, stat cards, search, Needs attention filter, mobile layout
+- Update a plugin, update all, and toggle per-plugin auto-updates from the dashboard (via WordPress core's own update handlers and permissions)
+- Licence states: Expired, Inactive and a derived "Expires in N days", each linking to the plugin's own settings page
+- "This site" card with one-click Copy of site details for support requests
+- `register()` accepts an optional `plugin_file`; new `has_plugin()` helper
+- Dashboard CSS/JS moved to enqueued files under `assets/`
 
 ### 1.1.0
 - Added JezPress updater for automatic updates from updates.jezpress.com

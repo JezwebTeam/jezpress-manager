@@ -56,8 +56,12 @@ jezpress plugins upload <slug> <zip>     # Upload new version
 jezpress-manager/
 ├── jezpress-manager.php                    # Main plugin bootstrap
 ├── includes/
-│   ├── class-jezpress-manager.php          # Core singleton class
-│   └── class-jezpress-manager-updater.php  # JezPress updater class
+│   ├── class-jezpress-manager.php          # Core singleton class (registry, AJAX, dashboard)
+│   ├── class-jezpress-manager-updater.php  # JezPress updater class
+│   └── index.php
+├── assets/
+│   ├── css/admin.css                       # Dashboard styles (dashboard hook only)
+│   └── js/admin.js                         # Dashboard behaviour (toggles, updates, filter, copy)
 ├── readme.txt                              # WordPress.org readme
 ├── README.md                               # GitHub documentation
 └── CLAUDE.md                               # This file
@@ -125,8 +129,9 @@ function my_plugin_register() {
         'menu_title'     => 'My Plugin',                    // Required
         'capability'     => 'manage_options',               // Optional (default: manage_options)
         'callback'       => 'render_function',              // Optional
-        'license_status' => 'active',                       // Optional
-        'license_expiry' => '2025-12-31',                   // Optional
+        'license_status' => 'active',                       // Optional: active|expired|invalid|inactive|''
+        'license_expiry' => '2025-12-31',                   // Optional: strtotime()-parsable
+        'plugin_file'    => 'my-plugin/my-plugin.php',      // Optional (1.2.0): basename when slug != folder
         'description'    => 'Plugin description',           // Optional
         'icon'           => 'dashicons-printer',            // Optional (default: dashicons-admin-plugins)
         'position'       => 10,                             // Optional (default: 10, lower = higher in menu)
@@ -148,12 +153,18 @@ JezPress_Manager::deregister( 'my-plugin-slug' );
 
 ### License Status Values
 
-| Value | Badge Color | Description |
-|-------|-------------|-------------|
-| `active` | Green | Valid license |
-| `expired` | Yellow | Expired license (shows renew link) |
-| `invalid` | Red | Invalid license key |
-| `''` | Gray | No license configured |
+Allowlisted in `JezPress_Manager::LICENSE_STATUSES`; anything else is coerced to `''`. The Manager renders what the plugin reports and links to the plugin's own settings page. It never stores or validates a key.
+
+| Value | Display | Next step link |
+|-------|---------|----------------|
+| `active` | Green "Active" + expiry (past expiry → Expired) | none |
+| `active`, expiry within `EXPIRING_DAYS` (30) | Amber "Expires in N days" | Renew in settings |
+| `expired` | Amber "Expired" | Renew in settings |
+| `inactive` | Amber "Not activated" (fleet licence classes report this whenever there is no active licence, keyed or not; never drives the banner) | Activate in settings |
+| `invalid` | Red "Invalid key" + inline note; drives the attention banner | Fix in settings |
+| `''` | "No key" | Add key in settings |
+
+`JezPress_Manager::has_plugin( $slug )` (1.2.0) returns whether a slug is registered.
 
 ## Development Guidelines
 
@@ -165,9 +176,11 @@ JezPress_Manager::deregister( 'my-plugin-slug' );
 
 ### Modifying the Dashboard
 
-- Dashboard HTML is in `render_dashboard()` method
-- Styles are inline via `get_inline_styles()` method
-- Consider extracting to separate CSS file if styles grow
+- Data: `get_dashboard_data()` → `build_row()` / `get_license_state()`. Update availability comes from core's `update_plugins` transient, version-compared; auto-update state from the `auto_update_plugins` site option.
+- Markup: `render_dashboard()`, `render_banner()`, `render_row()`. Escape at output.
+- Styles: `assets/css/admin.css` (all selectors `.jezpress-` prefixed, system font stack, no external requests). Menu icon CSS stays inline via `get_menu_icon_styles()` because it loads on every admin page.
+- Behaviour: `assets/js/admin.js`. Update / Update all call core's `wp.updates.ajax( 'update-plugin' )` with the Manager's own callbacks — never `wp.updates.updatePlugin()`, which assumes the Plugins-screen DOM and throws on any other `pagenow`. The auto-update toggle POSTs core's `toggle-auto-updates` action directly with the same `updates` nonce (as core's Plugins screen does): that handler returns an empty success payload and `wp.updates.ajaxAlways()` dereferences it, so sending it through `wp.updates.ajax()` throws and leaves `ajaxLocked` stuck. The server side for both is core's own handlers (`updates` nonce, `update_plugins` capability).
+- Capabilities: page = `manage_options`; update buttons render only for `update_plugins` (false under `DISALLOW_FILE_MODS`); toggle = `activate_plugins`.
 
 ### Adding New Registration Parameters
 
@@ -188,6 +201,11 @@ JezPress_Manager::deregister( 'my-plugin-slug' );
 - [ ] Settings buttons link to correct submenu pages
 - [ ] Responsive layout works on smaller screens
 - [ ] No PHP warnings or notices
+- [ ] `expired`, `inactive`, `invalid`, `active`, `''` each render the right badge + link; unknown values fall to No key
+- [ ] Toggle works for a plugin whose slug ≠ folder once it passes `plugin_file`
+- [ ] Update button installs a pending version via core; failure text shows inline
+- [ ] Update buttons absent for a user without `update_plugins` and under `DISALLOW_FILE_MODS`
+- [ ] No request leaves wp-admin for fonts or scripts (browser network tab)
 
 ### Registration Testing
 
@@ -319,8 +337,10 @@ curl -X POST "$WEBHOOK_URL" \
 |------|----------|---------|
 | `plugins_loaded` | 5 | Initialize plugin |
 | `admin_menu` | 9 | Register admin menus |
-| `admin_enqueue_scripts` | 10 | Load admin styles |
+| `admin_enqueue_scripts` | 10 | Menu icon CSS everywhere; dashboard CSS/JS + core `updates` + thickbox on `toplevel_page_jezpress-manager` only |
 | `admin_init` | 10 | Handle activation redirect |
+| `wp_ajax_jezpress_manager_toggle_plugin` | 10 | Activate/deactivate (nonce `jezpress_toggle_nonce`, `activate_plugins`, `plugin_basename()` + `validate_plugin()`) |
+| `wp_ajax_jezpress_manager_check_updates` | 10 | Force core re-check: `wp_clean_plugins_cache( true )` + `wp_update_plugins()` (nonce `jezpress_check_updates_nonce`, `update_plugins`). Modifies no files. |
 
 ### Activation/Deactivation
 
@@ -338,7 +358,7 @@ curl -X POST "$WEBHOOK_URL" \
 
 ### Styles Not Loading
 
-1. Verify page hook contains `jezpress-manager` or `jezpress`
+1. Verify the page hook is exactly `toplevel_page_jezpress-manager` (the dashboard CSS/JS load there only; the menu icon CSS loads everywhere)
 2. Check browser console for CSS errors
 3. Clear any caching plugins
 

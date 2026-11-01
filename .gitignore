@@ -5,3 +5,6 @@
 # but is not ignored by default, which puts it one `git add -A` from history.
 # Do NOT add .claude/settings.json here - that is the committed team config.
 **/.claude/settings.local.json
+
+# Playwright MCP browser session artefacts (screenshots, console logs) from local runtime checks.
+.playwright-mcp/

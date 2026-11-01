@@ -16,9 +16,10 @@ JezPress Manager provides a unified dashboard for all your JezPress plugins. Ins
 
 = Features =
 
-* **Centralized Dashboard** - View all installed JezPress plugins in one place
-* **License Management** - Monitor license status for all your plugins at a glance
-* **Quick Support Access** - Easy access to documentation, support, and your account
+* **Centralized Dashboard** - View all installed JezPress plugins in one place, with search and a Needs attention filter
+* **Updates From One Screen** - See which plugins have updates, update one or all, and switch per-plugin auto-updates, all through WordPress core's own update handlers
+* **Licence Status At A Glance** - Each plugin reports its own licence state (active, expiring, expired, not activated, invalid, no key) with one clear next step; the Manager never stores a key
+* **Support In One Click** - Copy site details for a support request, plus direct contact and quick links
 * **Clean Interface** - Modern, responsive design that integrates with WordPress admin
 
 = For Plugin Developers =
@@ -55,6 +56,17 @@ Yes. JezPress plugins are designed to work independently. The manager simply pro
 
 == Changelog ==
 
+= 1.2.0 =
+* New: Redesigned dashboard - header with Check for updates and Update all, attention banner, stat cards (plugins active, updates available, licences, auto-updates), search, a Needs attention filter and a mobile layout
+* New: Update a plugin, update all, and switch per-plugin auto-updates from the dashboard; actions run through WordPress core's own update handlers and permissions
+* New: Licence states now include Expired, Not activated and a derived "Expires in N days", each linking to the plugin's own settings page; the Manager still never stores or validates a key
+* New: "This site" card with a one-click Copy of site details for support requests
+* New: register() accepts an optional plugin_file (plugin basename) so the active/inactive toggle works for plugins whose slug differs from their folder name
+* New: JezPress_Manager::has_plugin( $slug ) helper
+* Changed: Dashboard CSS and JavaScript moved from inline output to enqueued files under assets/, loaded on the Manager dashboard only
+* Fixed: Plugins reporting an expired or inactive licence no longer render as "Not Set"
+* Fixed: Plugins whose slug differs from their folder are matched by plugin_file or by name, so their update state and toggle work
+
 = 1.1.4 =
 * Security: Hardened the dashboard plugin activate/deactivate AJAX handler against path traversal - the plugin_file parameter is now normalised with plugin_basename() and validated with validate_plugin() before any filesystem access.
 
@@ -82,6 +94,9 @@ Yes. JezPress plugins are designed to work independently. The manager simply pro
 * Support and quick links section
 
 == Upgrade Notice ==
+
+= 1.2.0 =
+Redesigned dashboard with update actions, richer licence states and a Copy site details button. No settings change; the registration API is backward compatible.
 
 = 1.1.4 =
 Security hardening for the dashboard plugin activate/deactivate control. Recommended update.

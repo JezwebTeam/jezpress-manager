@@ -1,7 +1,7 @@
 # PLAN.md — JezPress Manager
 
 **Slug:** `jezpress-manager` · **Class prefix:** `JezPress_Manager` · **Const prefix:** `JEZPRESS_MANAGER_` · **Text domain:** `jezpress-manager`
-**Status:** Phase 0 complete — 1.2.0 dashboard rebuild scoped and ready to build. Updated 2026-11-01.
+**Status:** 1.2.0 Phase 3 built and audited (2026-11-01); next step is `/release 1.2.0` (pre-release audit runs inside it). Updated 2026-11-01.
 
 > Dev-only file. Excluded from the release ZIP (`release.yml` excludes `PLAN.md`). Mirrors `.claude/build-playbook.md`; tick items as each phase passes its audit gate.
 >
@@ -15,7 +15,7 @@ One admin screen that shows every JezPress plugin on the site — version, updat
 
 ## Confirmed decisions (locked)
 1. **Two releases, not one.** 1.2.0 = dashboard rebuild on data already available, zero contract change. 1.3.0 = Site info page + additive registration fields. Keeps the first drop fleet-independent and each audit reviewable.
-2. **Update actions go through WordPress core.** Update / Update all / auto-update toggle call core's `wp.updates` AJAX actions (`update-plugin`, `toggle-auto-updates`). The Manager adds no server-side update handler. Core enforces the nonce and `update_plugins`. Buttons render only for users holding `update_plugins`; hidden entirely under `DISALLOW_FILE_MODS`. The filesystem-credentials dialog template is printed so hosts needing FTP creds don't fail silently.
+2. **Update actions go through WordPress core.** Update / Update all / auto-update toggle call core's `wp.updates` AJAX actions (`update-plugin`, `toggle-auto-updates`). The Manager adds no server-side handler that modifies files; its one new AJAX action only forces core's re-check (`wp_clean_plugins_cache( true )` + `wp_update_plugins()`) behind a nonce + `update_plugins`. Core enforces the nonce and `update_plugins` on the update actions themselves. Buttons render only for users holding `update_plugins`; hidden entirely under `DISALLOW_FILE_MODS`. **JS calls `wp.updates.ajax( 'update-plugin' )` directly with its own callbacks, and POSTs `toggle-auto-updates` itself with the same nonce** (core's handler returns an empty success payload, which `wp.updates.ajaxAlways()` dereferences — caught in the Playground run) — verified against core's `updates.js` (2026-11-01): `wp.updates.updatePlugin()` / `updatePluginSuccess` / `updatePluginError` dereference Plugins-screen DOM and throw on any other `pagenow`. For the same reason core's filesystem-credentials modal is **not** embedded (its resume path re-enters `updatePlugin()`); on `unable_to_connect_to_filesystem` the row shows the error inline with a link to the Plugins screen and releases core's `ajaxLocked`.
 3. **"Security releases only" is dropped.** WordPress has no security-only channel for plugins. Auto-updates card reads "N of N on · Set per plugin".
 4. **Licence state allowlist** (`register()` `license_status`): `active`, `expired`, `invalid`, `inactive`, `''` (no key). `expiring` is **derived** (active + parsable expiry within 30 days); when the expiry string does not parse (e.g. `lifetime`) the row stays plain Active. `inactive` is new to the allowlist — today it falls to the default badge. Each state's action is a link to the plugin's own settings/licence page; the Manager never shows a key field.
 5. **Additive contract only.** New `register()` keys get a default + sanitiser + README/CLAUDE.md docs. Nothing existing is renamed or repurposed (scaffold-standard #10). Two additive items ship in **1.2.0** because they fix live defects: `plugin_file` (toggle currently builds `slug/slug.php`, which is wrong for Australia Post `jpwap-settings` and Turnstile `jezcft-settings`) and a public `has_plugin( $slug )` (JezPress SEO already calls it behind `method_exists`, so today it always draws its own top-level menu).
@@ -31,19 +31,19 @@ One admin screen that shows every JezPress plugin on the site — version, updat
 
 ### Release 1.2.0 — Dashboard rebuild
 - [x] **Phase 0 — Plan & scope.** Design reviewed ×3, fleet impact checked (94 `register()` callers, 150 `JEZPRESS_MANAGER_ACTIVE` checks, menu-slug page-hook users, SEO's `has_plugin`). PLAN.md written. *(no audit)*
-- [ ] **Phase 3 — Core feature (attack surface).** *(full audit)*
-  - [ ] Header: site host, "Updates checked N ago" (core `update_plugins->last_checked`), Check for updates (triggers `wp_update_plugins()` via core), Update all (N).
-  - [ ] Attention banner from the worst reported state; disappears when everything is healthy.
-  - [ ] Four stat cards: plugins active, updates available, licences (counts per state), auto-updates N of N.
-  - [ ] Table: icon, name, description, version chip, update chip ("X.Y.Z available" + "What changed" → core plugin-information thickbox), licence badge + action link, toggle (existing handler), auto-update state, Settings, kebab.
-  - [ ] Search + All / Needs attention filter (client-side).
-  - [ ] Inline info note under a row with `invalid` status.
-  - [ ] This site card (WP, PHP, Manager, plugins registered) + Copy (clipboard, client-side) + "See all site info" (links to Site info in 1.3.0; hidden until then).
-  - [ ] Need a hand + Quick links + footer (existing content, new layout).
-  - [ ] `register()`: add `plugin_file` (sanitised with `plugin_basename()`, validated with `validate_plugin()` at use time, fallback to `slug/slug.php`); add `inactive` to the status allowlist; add `has_plugin()`.
-  - [ ] Assets: `assets/css/admin.css`, `assets/js/admin.js`; enqueue `updates` + `thickbox` + `plugin-install` on the Manager hook only; print `wp_print_request_filesystem_credentials_modal()`.
-  - [ ] Mobile layout (page 2 of the design).
-  - [ ] Docs: README.md + CLAUDE.md registration table (`plugin_file`, `inactive`), file structure (assets), hook map.
+- [x] **Phase 3 — Core feature (attack surface).** *(full audit — see Audit-gate note)*
+  - [x] Header: site host, "Updates checked N ago" (core `update_plugins->last_checked`), Check for updates (triggers `wp_update_plugins()` via core), Update all (N).
+  - [x] Attention banner from the worst reported state; disappears when everything is healthy.
+  - [x] Four stat cards: plugins active, updates available, licences (counts per state), auto-updates N of N.
+  - [x] Table: icon, name, description, version chip, update chip ("X.Y.Z available" + "What changed" → core plugin-information thickbox), licence badge + action link, toggle (existing handler), auto-update state, Settings, kebab.
+  - [x] Search + All / Needs attention filter (client-side).
+  - [x] Inline info note under a row with `invalid` status.
+  - [x] This site card (WP, PHP, Manager, plugins registered) + Copy (clipboard, client-side) + "See all site info" (links to Site info in 1.3.0; hidden until then).
+  - [x] Need a hand + Quick links + footer (existing content, new layout).
+  - [x] `register()`: add `plugin_file` (sanitised with `plugin_basename()`, validated with `validate_plugin()` at use time, fallback to `slug/slug.php`); add `inactive` to the status allowlist; add `has_plugin()`.
+  - [x] Assets: `assets/css/admin.css`, `assets/js/admin.js`; enqueue core `updates` + thickbox on the Manager hook only (no credentials modal — see decision 2). Column widths live on `th` only so the <782px block layout works.
+  - [x] Mobile layout (page 2 of the design).
+  - [x] Docs: README.md + CLAUDE.md registration table (`plugin_file`, `inactive`), file structure (assets), hook map.
 - [ ] **Phase 6 — Release 1.2.0.** `/release 1.2.0`. Pre-release audit (mandatory) → bump header / const / Stable tag / CLAUDE.md → tag → workflow → per-version changelog → dashboard Description + Changelog tabs → info-endpoint curl → LEDGER row → Google Chat card. *(pre-release audit)*
 
 ### Release 1.3.0 — Site info + contract fields
@@ -96,4 +96,8 @@ Blocked until the shared licensing library is approved and shipped fleet-wide. R
 - Fleet-wide follow-up (separate from this plugin): any plugin registering without a callable `callback` is missing from the Manager menu ([[jezpress-manager-register-needs-callback]]).
 
 ## Audit-gate note
-None deferred. 1.2.0 Phase 3 audit = `jezpress-code-reviewer` on the full diff; pre-release audit via `/release`. If subagents are unavailable, do a manual self-review and record `manual` in the LEDGER row.
+**1.2.0 Phase 3 (2026-11-01) — both layers ran, verdict PASS after fixes.**
+- Layer 2, `jezpress-code-reviewer` on Opus 5.5 (one round, per the round budget): **PASS WITH FIXES** — H1 `inactive` copy claimed a key exists when ~70 fleet `get_status()` implementations return `inactive` for "no active licence" (fixed: neutral "Not activated" copy, state no longer drives the banner); M1 slug≠folder plugins dropped out of update tracking (fixed: active-plugin Name fallback + "Update status unknown" chip + `untracked` stat suppressing healthy claims); M2 "Up to date" shown for detected-inactive rows (fixed); L1–L6 all applied.
+- Layer 1, Codex gpt-6.1-sol round 1: **PASS WITH FIXES** — H-1 core's plugin-information iframe posts `update-plugin` to the parent and core routes it to `wp.updates.updatePlugin()`, which throws on this page (fixed: capture-phase `message` interception → `updateRow()`); M-1 forced-policy item lacked offer fields (fixed: `get_auto_update_item()` mirrors core's list-table payload). Round 2 on the fix diff: **PASS**, one residual Medium (default `id` must be the basename) fixed in the same session.
+- Runtime: WordPress Playground (PHP 8.1, WP latest) with an mu-plugin fixture covering every licence state, a bogus status, a traversal `plugin_file`, a detected-inactive plugin and a faked update offer. Toggle on/off, search, Needs-attention filter, auto-update toggle, Update (core error path shown inline, lock released), iframe-message route, Copy, kebab menus, desktop + 390px layouts all verified; console clean; only external request is core's Gravatar. Found and fixed during the run: routing `toggle-auto-updates` through `wp.updates.ajax()` throws inside core's `ajaxAlways()` (empty success payload) and leaves `ajaxLocked` stuck.
+- Pre-release audit (Fable) runs inside `/release 1.2.0`, before the version bump.
