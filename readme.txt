@@ -4,7 +4,7 @@ Tags: jezpress, dashboard, plugin management, license management
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.1
-Stable tag: 1.1.4
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,10 @@ Yes. JezPress plugins are designed to work independently. The manager simply pro
 * Changed: Dashboard CSS and JavaScript moved from inline output to enqueued files under assets/, loaded on the Manager dashboard only
 * Fixed: Plugins reporting an expired or inactive licence no longer render as "Not Set"
 * Fixed: Plugins whose slug differs from their folder are matched by plugin_file or by name, so their update state and toggle work
+* Fixed: A licence expiring today no longer shows as Expired; days left are counted from the start of today in the site timezone
+* Fixed: Check for updates reports an error when WordPress cannot reach the update server instead of claiming no updates are available
+* Fixed: The "What changed" link is hidden for users who cannot open the plugin details window (no install_plugins capability)
+* Fixed: Network-activated plugins are no longer listed as inactive on multisite
 
 = 1.1.4 =
 * Security: Hardened the dashboard plugin activate/deactivate AJAX handler against path traversal - the plugin_file parameter is now normalised with plugin_basename() and validated with validate_plugin() before any filesystem access.
@@ -80,7 +84,7 @@ Yes. JezPress plugins are designed to work independently. The manager simply pro
 = 1.1.1 =
 * Detect inactive JezPress plugins and show them in the dashboard alongside active ones
 * Add a Status column with a CSS toggle switch to activate/deactivate plugins directly from the Manager dashboard
-* AJAX-powered toggle — no page reload needed
+* AJAX-powered toggle - no page reload needed
 * Security audit completed - no vulnerabilities found
 
 = 1.1.0 =

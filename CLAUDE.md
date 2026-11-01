@@ -13,7 +13,7 @@
 
 **Plugin Name:** JezPress Manager
 **Slug:** `jezpress-manager`
-**Version:** 1.1.4
+**Version:** 1.2.0
 **Type:** WordPress Admin Dashboard Plugin
 **Purpose:** Central dashboard for managing all JezPress plugins, licenses, and support
 **License Required:** No (free plugin, no license validation)

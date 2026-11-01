@@ -293,9 +293,9 @@ class JezPress_Manager {
 		}
 
 		// Registered plugins are active by definition, so only an active plugin can be the match.
-		$active = (array) get_option( 'active_plugins', array() );
+		// is_plugin_active() also covers network-activated plugins, which 'active_plugins' omits.
 		foreach ( $installed as $basename => $headers ) {
-			if ( '' !== $plugin['name'] && isset( $headers['Name'] ) && $headers['Name'] === $plugin['name'] && in_array( $basename, $active, true ) ) {
+			if ( '' !== $plugin['name'] && isset( $headers['Name'] ) && $headers['Name'] === $plugin['name'] && is_plugin_active( $basename ) ) {
 				return $basename;
 			}
 		}
@@ -319,16 +319,15 @@ class JezPress_Manager {
 	 * @return array Array of inactive JezPress plugin data, keyed by plugin basename.
 	 */
 	private function detect_inactive_jezpress_plugins( $all_plugins, $registered_files = array() ) {
-		$active_plugins = (array) get_option( 'active_plugins', array() );
-		$inactive       = array();
+		$inactive = array();
 
 		// Build a set of plugin basenames that correspond to registered (active) JezPress plugins.
 		// A registered plugin's slug matches the folder/file portion of its basename.
 		$registered_slugs = array_keys( self::$plugins );
 
 		foreach ( $all_plugins as $basename => $headers ) {
-			// Only inspect plugins that are NOT currently WordPress-active.
-			if ( in_array( $basename, $active_plugins, true ) || in_array( $basename, $registered_files, true ) ) {
+			// Only inspect plugins that are NOT currently WordPress-active (site or network).
+			if ( is_plugin_active( $basename ) || in_array( $basename, $registered_files, true ) ) {
 				continue;
 			}
 
@@ -477,8 +476,16 @@ class JezPress_Manager {
 		wp_clean_plugins_cache( true );
 		wp_update_plugins();
 
+		// wp_update_plugins() saves last_checked BEFORE the HTTP request and returns without the
+		// full write when api.wordpress.org is unreachable, so on failure the transient carries
+		// last_checked but no checked/no_update lists, and no JezPress offer was injected either.
+		// Say so rather than reporting "0 updates" as if the check succeeded.
 		$fresh = get_site_transient( 'update_plugins' );
-		$count = ( is_object( $fresh ) && ! empty( $fresh->response ) ) ? count( (array) $fresh->response ) : 0;
+		if ( ! is_object( $fresh ) || ! isset( $fresh->checked ) || ! isset( $fresh->no_update ) ) {
+			wp_send_json_error( array( 'message' => __( 'WordPress could not reach the update server. Try again later.', 'jezpress-manager' ) ), 502 );
+		}
+
+		$count = ! empty( $fresh->response ) ? count( (array) $fresh->response ) : 0;
 
 		wp_send_json_success(
 			array(
@@ -749,11 +756,15 @@ class JezPress_Manager {
 			$resp = $responses[ $file ];
 			$new  = ( is_object( $resp ) && ! empty( $resp->new_version ) ) ? sanitize_text_field( (string) $resp->new_version ) : '';
 			if ( '' !== $new && '' !== $installed_version && version_compare( $new, $installed_version, '>' ) ) {
-				$row['new_version']   = $new;
-				$row['update_slug']   = ! empty( $resp->slug ) ? sanitize_key( $resp->slug ) : sanitize_key( dirname( $file ) );
-				$row['changelog_url'] = self_admin_url(
-					'plugin-install.php?tab=plugin-information&plugin=' . $row['update_slug'] . '&section=changelog&TB_iframe=true&width=600&height=800'
-				);
+				$row['new_version'] = $new;
+				$row['update_slug'] = ! empty( $resp->slug ) ? sanitize_key( $resp->slug ) : sanitize_key( dirname( $file ) );
+				// plugin-install.php dies without install_plugins (false under DISALLOW_FILE_MODS
+				// and for non-super-admins on multisite), so only offer the link to users who can open it.
+				if ( current_user_can( 'install_plugins' ) ) {
+					$row['changelog_url'] = self_admin_url(
+						'plugin-install.php?tab=plugin-information&plugin=' . $row['update_slug'] . '&section=changelog&TB_iframe=true&width=600&height=800'
+					);
+				}
 			}
 		}
 
@@ -850,7 +861,11 @@ class JezPress_Manager {
 	private function get_license_state( $status, $expiry ) {
 		$timestamp = ( '' !== $expiry ) ? strtotime( $expiry ) : false;
 		$date      = $timestamp ? wp_date( get_option( 'date_format' ), $timestamp ) : '';
-		$days_left = $timestamp ? (int) floor( ( $timestamp - time() ) / DAY_IN_SECONDS ) : null;
+		// Whole days from the start of today (site timezone): plugins pass date-only strings,
+		// which strtotime() reads as midnight, so measuring from time() would call a licence
+		// expired for the whole of its final day.
+		$today     = (int) strtotime( wp_date( 'Y-m-d' ) );
+		$days_left = $timestamp ? (int) floor( ( $timestamp - $today ) / DAY_IN_SECONDS ) : null;
 
 		// A plugin still reporting "active" past its own expiry date is expired.
 		if ( 'active' === $status && null !== $days_left && $days_left < 0 ) {
@@ -869,7 +884,6 @@ class JezPress_Manager {
 
 		switch ( $status ) {
 			case 'active':
-				$days_left = $timestamp ? (int) floor( ( $timestamp - time() ) / DAY_IN_SECONDS ) : null;
 				if ( null !== $days_left && $days_left >= 0 && $days_left <= self::EXPIRING_DAYS ) {
 					$state['key']   = 'expiring';
 					$state['tone']  = 'warn';
