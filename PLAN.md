@@ -1,7 +1,7 @@
 # PLAN.md — JezPress Manager
 
 **Slug:** `jezpress-manager` · **Class prefix:** `JezPress_Manager` · **Const prefix:** `JEZPRESS_MANAGER_` · **Text domain:** `jezpress-manager`
-**Status:** 1.2.0 Phase 3 built and audited (2026-11-01); next step is `/release 1.2.0` (pre-release audit runs inside it). Updated 2026-11-01.
+**Status:** 1.3.0 released 2026-11-01 via `/release 1.3.0` (tag v1.3.0). Next: Phase 7 onboarding / fleet adoption of the schema-2 fields. Updated 2026-11-01.
 
 > Dev-only file. Excluded from the release ZIP (`release.yml` excludes `PLAN.md`). Mirrors `.claude/build-playbook.md`; tick items as each phase passes its audit gate.
 >
@@ -44,18 +44,19 @@ One admin screen that shows every JezPress plugin on the site — version, updat
   - [x] Assets: `assets/css/admin.css`, `assets/js/admin.js`; enqueue core `updates` + thickbox on the Manager hook only (no credentials modal — see decision 2). Column widths live on `th` only so the <782px block layout works.
   - [x] Mobile layout (page 2 of the design).
   - [x] Docs: README.md + CLAUDE.md registration table (`plugin_file`, `inactive`), file structure (assets), hook map.
-- [ ] **Phase 6 — Release 1.2.0.** `/release 1.2.0`. Pre-release audit (mandatory) → bump header / const / Stable tag / CLAUDE.md → tag → workflow → per-version changelog → dashboard Description + Changelog tabs → info-endpoint curl → LEDGER row → Google Chat card. *(pre-release audit)*
+- [x] **Phase 6 — Release 1.2.0.** Shipped 2026-11-01 via `/release 1.2.0` (built locally; the CI release workflow was removed from the repo the same day). Pre-release audit (mandatory) → bump header / const / Stable tag / CLAUDE.md → tag → workflow → per-version changelog → dashboard Description + Changelog tabs → info-endpoint curl → LEDGER row → Google Chat card. *(pre-release audit)*
 
 ### Release 1.3.0 — Site info + contract fields
-- [ ] **Phase 3 — Core feature.** *(full audit)*
-  - [ ] Submenu "Site info" (`manage_options`).
-  - [ ] Health strip (8 checks): HTTPS, REST reachable (loopback), object cache, WP-Cron firing (Manager heartbeat), plugin update waiting, `WP_DEBUG`, PHP supported, plugin updates allowed.
-  - [ ] Six panes from `WP_Debug_Data` + JezPress pane (Manager, plugins, licences reported, updates waiting, registry schema, last update check).
-  - [ ] Copy for support (plain text) + Download report (nonced `admin_post_` handler, `manage_options`, `.txt`).
-  - [ ] Contract fields (all optional): `license_url`, `license_expires` (ISO 8601), `update_transient`, `license_last_checked`. "Check for updates" deletes each registered `update_transient` before `wp_update_plugins()`.
-  - [ ] Heartbeat: one daily cron event writing a timestamp option; both in `uninstall.php` and the Data footprint table.
-  - [ ] Docs + fleet adoption note (each plugin adds the fields in its next ordinary release; no forced fleet release).
-- [ ] **Phase 6 — Release 1.3.0.** `/release 1.3.0`. *(pre-release audit)*
+- [x] **Phase 3 — Core feature.** Built 2026-11-01; audit PASS WITH FIXES, fixes applied (see *Audit-gate note*). *(full audit)*
+  - [x] Submenu "Site info" (`manage_options`; the five core panes + report also need `view_site_health_checks`, Site Health's rule).
+  - [x] Health strip (8 checks): HTTPS, REST reachable (loopback), object cache, WP-Cron firing (Manager heartbeat), plugin update waiting, `WP_DEBUG`, PHP supported, plugin updates allowed.
+  - [x] Six panes from `WP_Debug_Data` + JezPress pane (Manager, plugins, licences reported, updates waiting, registry schema, last update check).
+  - [x] Copy for support (plain text) + Download report (nonced `admin_post_` handler, `manage_options`, `.txt`).
+  - [x] Contract fields (all optional): `license_url`, `license_expires` (ISO 8601), `update_transient`, `license_last_checked`. "Check for updates" deletes each registered `update_transient` before `wp_update_plugins()`.
+  - [x] Heartbeat: one daily cron event writing a timestamp option; both in `uninstall.php` and the Data footprint table.
+  - [x] Docs + fleet adoption note (each plugin adds the fields in its next ordinary release; no forced fleet release).
+  - [x] Dashboard polish from the 1.2.0 staging review (Abner, 2026-11-01): raise the `.jezpress-manager-wrap` cap in `assets/css/admin.css` from 1400px to ~1800px so the layout uses wide screens (grids are already fluid); and on the Manager page hook only, remove other plugins' `admin_notices` / `all_admin_notices` callbacks (keep core's and the Manager's own) - the row badges, Licences card and Needs-attention filter already report every licence state those nags repeat. A fleet-side fix (plugins skip their nag when the Manager is active) is the long-term answer but is not a 1.3.0 item.
+- [x] **Phase 6 — Release 1.3.0.** Shipped 2026-11-01 via `/release 1.3.0` (built locally; no CI workflow in this repo). Pre-release audit: Codex r3 PASS (1 Medium: updates check honest about unknown status, fixed), Fable r1 PASS (1 Medium: health strip gated on `view_site_health_checks` like Site Health, fixed; 3 Lows fixed, 1 noted), Codex r4 verified the fix diff. *(pre-release audit)*
 
 ### Deferred — Licences page (design page 5)
 Blocked until the shared licensing library is approved and shipped fleet-wide. Reasons, so nobody re-litigates them:
@@ -72,8 +73,8 @@ Blocked until the shared licensing library is approved and shipped fleet-wide. R
 | transient | `jezpress_manager_update_info` | updater cache (12 h) | ✅ explicit delete |
 | transient | `jezpress_manager_activation_redirect` | activation hook (30 s) | ✅ explicit delete |
 | **1.2.0** | *nothing new* | — | — |
-| option (1.3.0) | `jezpress_manager_cron_heartbeat` | heartbeat cron | ⬜ add to `uninstall.php` when created |
-| cron (1.3.0) | `jezpress_manager_heartbeat` (daily) | `admin_init` schedule-if-missing | ⬜ `wp_clear_scheduled_hook` in `uninstall.php` + deactivation |
+| option (1.3.0) | `jezpress_manager_cron_heartbeat` | heartbeat cron (autoload off) | ✅ explicit delete |
+| cron (1.3.0) | `jezpress_manager_heartbeat` (daily) | activation + `admin_init` schedule-if-missing | ✅ `wp_clear_scheduled_hook` in `uninstall.php` + deactivation |
 | table | *none* | — | — |
 
 ## Acceptance criteria — 1.2.0
@@ -96,6 +97,8 @@ Blocked until the shared licensing library is approved and shipped fleet-wide. R
 - Fleet-wide follow-up (separate from this plugin): any plugin registering without a callable `callback` is missing from the Manager menu ([[jezpress-manager-register-needs-callback]]).
 
 ## Audit-gate note
+**1.3.0 Phase 3 (2026-11-01) — both layers ran, verdict PASS WITH FIXES, fixes applied.** Codex r1: PASS, 2 Medium (impossible ISO dates passed the sanitiser → `checkdate()`; multisite heartbeat cleanup → per-site loop) fixed before layer 2. `jezpress-code-reviewer` (Opus 5.5, one round): 1 High (`register()` guard dropped object / query-string args → `wp_parse_args( $args )`), 1 Medium (symlinked installs: notice suppression compared unresolved paths → `realpath()` variants), 6 Low (Throwable catch, wording, `class-wp-site-health.php` require, single-site banner text, `delete_site_transient()`, `get_sites()` paging) — all applied; Codex r2 verified the fix diff. Playground smoke PASS on PHP 8.1 + 8.3. Staging check not run (needs a hand install).
+
 **1.2.0 Phase 3 (2026-11-01) — both layers ran, verdict PASS after fixes.**
 - Layer 2, `jezpress-code-reviewer` on Opus 5.5 (one round, per the round budget): **PASS WITH FIXES** — H1 `inactive` copy claimed a key exists when ~70 fleet `get_status()` implementations return `inactive` for "no active licence" (fixed: neutral "Not activated" copy, state no longer drives the banner); M1 slug≠folder plugins dropped out of update tracking (fixed: active-plugin Name fallback + "Update status unknown" chip + `untracked` stat suppressing healthy claims); M2 "Up to date" shown for detected-inactive rows (fixed); L1–L6 all applied.
 - Layer 1, Codex gpt-6.1-sol round 1: **PASS WITH FIXES** — H-1 core's plugin-information iframe posts `update-plugin` to the parent and core routes it to `wp.updates.updatePlugin()`, which throws on this page (fixed: capture-phase `message` interception → `updateRow()`); M-1 forced-policy item lacked offer fields (fixed: `get_auto_update_item()` mirrors core's list-table payload). Round 2 on the fix diff: **PASS**, one residual Medium (default `id` must be the basename) fixed in the same session.

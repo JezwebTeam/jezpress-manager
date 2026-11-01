@@ -13,7 +13,7 @@
 
 **Plugin Name:** JezPress Manager
 **Slug:** `jezpress-manager`
-**Version:** 1.2.0
+**Version:** 1.3.0
 **Type:** WordPress Admin Dashboard Plugin
 **Purpose:** Central dashboard for managing all JezPress plugins, licenses, and support
 **License Required:** No (free plugin, no license validation)
@@ -56,7 +56,8 @@ jezpress plugins upload <slug> <zip>     # Upload new version
 jezpress-manager/
 ├── jezpress-manager.php                    # Main plugin bootstrap
 ├── includes/
-│   ├── class-jezpress-manager.php          # Core singleton class (registry, AJAX, dashboard)
+│   ├── class-jezpress-manager.php          # Core singleton class (registry, AJAX, dashboard, heartbeat, notice suppression)
+│   ├── class-jezpress-manager-site-info.php # Site info page (health checks, panes, support report, download)
 │   ├── class-jezpress-manager-updater.php  # JezPress updater class
 │   └── index.php
 ├── assets/
@@ -88,6 +89,7 @@ JEZPRESS_MANAGER_ACTIVE       // Boolean true - use for quick availability check
 ```
 JezPress Manager (menu slug: jezpress-manager)
 ├── Dashboard (default submenu)
+├── Site info (jezpress-manager-site-info, 1.3.0)
 └── [Registered plugin submenus]
 ```
 
@@ -132,6 +134,10 @@ function my_plugin_register() {
         'license_status' => 'active',                       // Optional: active|expired|invalid|inactive|''
         'license_expiry' => '2025-12-31',                   // Optional: strtotime()-parsable
         'plugin_file'    => 'my-plugin/my-plugin.php',      // Optional (1.2.0): basename when slug != folder
+        'license_url'    => admin_url( 'admin.php?page=my-plugin&tab=license' ), // Optional (1.3.0): licence action link target
+        'license_expires' => '2026-12-31',                  // Optional (1.3.0): ISO 8601; wins over license_expiry
+        'update_transient' => 'my_plugin_update_info',      // Optional (1.3.0): deleted by "Check for updates"
+        'license_last_checked' => 1767139200,               // Optional (1.3.0): Unix time or strtotime() string
         'description'    => 'Plugin description',           // Optional
         'icon'           => 'dashicons-printer',            // Optional (default: dashicons-admin-plugins)
         'position'       => 10,                             // Optional (default: 10, lower = higher in menu)
@@ -165,6 +171,20 @@ Allowlisted in `JezPress_Manager::LICENSE_STATUSES`; anything else is coerced to
 | `''` | "No key" | Add key in settings |
 
 `JezPress_Manager::has_plugin( $slug )` (1.2.0) returns whether a slug is registered.
+
+### Schema 2 fields (1.3.0)
+
+`license_url` (absolute URL, `esc_url_raw`), `license_expires` (ISO 8601, regex + `strtotime`), `update_transient` (`[A-Za-z0-9_-]{1,172}`), `license_last_checked` (int or `strtotime()` string, rejected if before 2000 or over a day in the future). The Manager adds `supplied` (which optional keys were passed) and `schema` (1 or `REGISTRY_SCHEMA` = 2) to each registry entry. `license_url` is a plugin-supplied href; `esc_url_raw` on input, `esc_url` on output.
+
+## Site info page (1.3.0)
+
+`JezPress_Manager_Site_Info` (`includes/class-jezpress-manager-site-info.php`), submenu `jezpress-manager-site-info`, `manage_options`. The health strip, the five WordPress panes and the report additionally need `view_site_health_checks` (Site Health's rule: `install_plugins`, so super admins on multisite); without it only the JezPress pane renders and no loopback runs.
+
+- **Health checks** (`get_health_checks()`): HTTPS (`wp_is_using_https`), REST (`WP_Site_Health::get_test_rest_availability()`, a 10 s loopback), object cache (`wp_using_ext_object_cache`), WP-Cron (the heartbeat option, stale after 36 h), updates waiting (dashboard stats + core transient), `WP_DEBUG`, PHP (`wp_check_php_version()`, cached a week by core), file mods (`wp_is_file_mod_allowed( 'capability_update_core' )`). Statuses `ok | info | warn | bad`; `ok` + `info` count as passed.
+- **Panes** (`get_panes()`): values come from `WP_Debug_Data::debug_data()` with direct fallbacks. `debug_data()` is computed live like Site Health's Info tab (it includes core's wordpress.org probe), so it is only called on this page and in the download handler.
+- **Report** (`build_report()`): JezPress sections first, then the core sections in `REPORT_SECTIONS`, all through `WP_Debug_Data::format( $sections, 'debug' )`, which skips `private` fields. Copy uses the dashboard's `#jezpress-copy-site` / `#jezpress-site-report` JS; Download is `admin_post_jezpress_manager_site_report` (`check_admin_referer`, `text/plain`, `nosniff`).
+- **Heartbeat**: `jezpress_manager_heartbeat` daily event scheduled on activation and on `admin_init` if missing; the callback writes `jezpress_manager_cron_heartbeat` (autoload off). Cleared on deactivation and in `uninstall.php`.
+- **Notice suppression**: `suppress_foreign_notices()` on `in_admin_header`, Manager screens only. Reflection resolves each `admin_notices` / `all_admin_notices` / `network_admin_notices` / `user_admin_notices` callback to its file; callbacks from `wp-admin/`, `wp-includes/` and this plugin stay, every other plugin's are removed with `remove_action()`. Internal functions (no file) are left alone.
 
 ## Development Guidelines
 
@@ -340,12 +360,16 @@ curl -X POST "$WEBHOOK_URL" \
 | `admin_enqueue_scripts` | 10 | Menu icon CSS everywhere; dashboard CSS/JS + core `updates` + thickbox on `toplevel_page_jezpress-manager` only |
 | `admin_init` | 10 | Handle activation redirect |
 | `wp_ajax_jezpress_manager_toggle_plugin` | 10 | Activate/deactivate (nonce `jezpress_toggle_nonce`, `activate_plugins`, `plugin_basename()` + `validate_plugin()`) |
-| `wp_ajax_jezpress_manager_check_updates` | 10 | Force core re-check: `wp_clean_plugins_cache( true )` + `wp_update_plugins()` (nonce `jezpress_check_updates_nonce`, `update_plugins`). Modifies no files. |
+| `wp_ajax_jezpress_manager_check_updates` | 10 | Deletes the Manager's own update transient and every registered `update_transient`, then forces core's re-check: `wp_clean_plugins_cache( true )` + `wp_update_plugins()` (nonce `jezpress_check_updates_nonce`, `update_plugins`). Modifies no files. |
+| `admin_init` | 10 | Schedule the daily heartbeat if missing (1.3.0) |
+| `jezpress_manager_heartbeat` | 10 | Write the heartbeat timestamp option (1.3.0) |
+| `in_admin_header` | 10 | Drop other plugins' admin notices on the Manager's screens (1.3.0) |
+| `admin_post_jezpress_manager_site_report` | 10 | Site info report download (1.3.0) |
 
 ### Activation/Deactivation
 
 - `register_activation_hook` - Sets version option and redirect transient
-- `register_deactivation_hook` - Cleanup (currently empty)
+- `register_deactivation_hook` - Clears the heartbeat cron event
 
 ## Troubleshooting
 
@@ -358,7 +382,7 @@ curl -X POST "$WEBHOOK_URL" \
 
 ### Styles Not Loading
 
-1. Verify the page hook is exactly `toplevel_page_jezpress-manager` (the dashboard CSS/JS load there only; the menu icon CSS loads everywhere)
+1. Verify the page hook is exactly `toplevel_page_jezpress-manager` or the Site info hook (`jezpress-manager_page_jezpress-manager-site-info`); the dashboard CSS/JS load on those two only, the menu icon CSS loads everywhere
 2. Check browser console for CSS errors
 3. Clear any caching plugins
 

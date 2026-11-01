@@ -103,6 +103,12 @@ function my_plugin_register_with_manager() {
 | `icon` | string | No | Dashicon class (default: `dashicons-admin-plugins`) |
 | `position` | int | No | Menu order - lower number appears first (default: `10`) |
 | `plugin_file` | string | No | Plugin basename, e.g. `my-plugin/my-plugin.php`. Lets the Manager find the plugin when the slug is not the folder name (since 1.2.0) |
+| `license_url` | string | No | Absolute URL of the plugin's own licence page or tab, e.g. `admin_url( 'admin.php?page=my-plugin&tab=license' )`. Licence action links ("Renew in settings", "Activate in settings") go here instead of the settings page (since 1.3.0) |
+| `license_expires` | string | No | Expiry as ISO 8601: `2026-12-31` or `2026-12-31T23:59:59+10:00`. Wins over `license_expiry` when valid; anything else is ignored (since 1.3.0) |
+| `update_transient` | string | No | Name of the transient your updater caches the update-server reply in (the one you pass to `get_transient()`). "Check for updates" deletes it before WordPress re-checks, so the row goes live instead of waiting up to 12 hours (since 1.3.0) |
+| `license_last_checked` | int\|string | No | When the plugin last validated its licence: Unix timestamp or `strtotime()`-parsable string. Shown on hover of the licence badge and in the support report (since 1.3.0) |
+
+All four 1.3.0 keys are optional and additive. A plugin passing any of them is recorded as registry schema 2; the Site info page reports how many registered plugins are on it. Add them in the plugin's next ordinary release; no fleet-wide release is needed.
 
 ### License Status Values
 
@@ -116,6 +122,16 @@ The Manager renders the status each plugin reports and links to that plugin's ow
 | `inactive` | Amber "Not activated" (no active licence; template-built plugins report this whether or not a key was entered) | Activate in settings |
 | `invalid` | Red "Invalid key" + inline note | Fix in settings |
 | (empty) | "No key" | Add key in settings |
+
+## Site Info
+
+**JezPress Manager → Site info** (`manage_options`) is the page Jezweb support asks for:
+
+- **Health strip** (8 checks): HTTPS, REST API reachable (Site Health's loopback test), persistent object cache, WP-Cron firing (measured by the Manager's own daily heartbeat event), plugin updates waiting, `WP_DEBUG`, PHP support status (wordpress.org's table, cached by core), plugin updates allowed (`DISALLOW_FILE_MODS` / `file_mod_allowed`).
+- **Six panes**: WordPress, Server, Database, Constants, Theme and plugins (from `WP_Debug_Data`), plus a JezPress pane (Manager version, plugins, licences, updates waiting, registry schema, last update check, heartbeat).
+- **Copy for support** puts the whole plain-text report on the clipboard; **Download report** saves it as `.txt` through a nonced `admin_post` handler. Both use `WP_Debug_Data::format()`, which leaves out the fields core marks private (database credentials, server paths), exactly like Site Health's copy button.
+
+The health strip, the WordPress/Server/Database/Constants/Theme panes and the report need `view_site_health_checks` (`install_plugins`; super admins on multisite), the same rule as Site Health. Without it the page shows the JezPress pane only.
 
 ## Menu Structure
 
@@ -169,13 +185,23 @@ JezPress_Manager::deregister( 'my-plugin-slug' );
 
 ### Actions
 
-None currently.
+| Hook | Purpose |
+|------|---------|
+| `jezpress_manager_heartbeat` | Daily WP-Cron event. Writes the `jezpress_manager_cron_heartbeat` option (Unix time) so Site info can tell whether WP-Cron fires. Cleared on deactivation and uninstall. |
+| `admin_post_jezpress_manager_site_report` | Site info "Download report" (nonce `jezpress_manager_site_report`, `manage_options` + `view_site_health_checks`). |
 
 ### Filters
 
 None currently.
 
 ## Changelog
+
+### 1.3.0
+- Site info page: 8-check health strip, six info panes, Copy for support and Download report
+- `register()` accepts `license_url`, `license_expires`, `update_transient` and `license_last_checked` (all optional)
+- Check for updates clears each registered plugin's update cache before WordPress re-checks
+- Daily heartbeat cron event backing the WP-Cron check
+- Dashboard uses wide screens (1800px) and hides other plugins' admin notices on the Manager's own screens
 
 ### 1.2.0
 - Redesigned dashboard: header with Check for updates and Update all, attention banner, stat cards, search, Needs attention filter, mobile layout

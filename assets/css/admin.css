@@ -29,7 +29,7 @@
 	--jzm-radius-sm: 6px;
 	--jzm-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 
-	max-width: 1400px;
+	max-width: 1800px;
 	margin: 10px 20px 0 0;
 	color: var(--jzm-text);
 }
@@ -1013,6 +1013,180 @@
 	color: var(--jzm-green);
 }
 
+.jezpress-site-info-link {
+	display: inline-block;
+	margin-left: 4px;
+	color: var(--jzm-green);
+	font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ */
+/* Site info                                                           */
+/* ------------------------------------------------------------------ */
+
+.jezpress-health {
+	margin-bottom: 16px;
+	padding: 14px 16px 16px;
+	border: 1px solid var(--jzm-border);
+	border-radius: var(--jzm-radius);
+	background: var(--jzm-card);
+	box-shadow: var(--jzm-shadow);
+}
+
+.jezpress-health-warn {
+	border-color: var(--jzm-amber-border);
+}
+
+.jezpress-health-bad {
+	border-color: var(--jzm-red-border);
+}
+
+.jezpress-health-summary {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 12px;
+	font-size: 15px;
+}
+
+.jezpress-health-summary > .dashicons {
+	font-size: 20px;
+	width: 20px;
+	height: 20px;
+	color: var(--jzm-green);
+}
+
+.jezpress-health-warn .jezpress-health-summary > .dashicons {
+	color: var(--jzm-amber);
+}
+
+.jezpress-health-bad .jezpress-health-summary > .dashicons {
+	color: var(--jzm-red);
+}
+
+.jezpress-health-count {
+	color: var(--jzm-muted);
+	font-size: 13px;
+}
+
+.jezpress-health-grid {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 10px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.jezpress-check {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin: 0;
+	padding: 10px 12px;
+	border: 1px solid var(--jzm-border);
+	border-radius: var(--jzm-radius-sm);
+	background: var(--jzm-card);
+	font-size: 13px;
+	min-width: 0;
+}
+
+.jezpress-check > .dashicons {
+	flex: 0 0 auto;
+	margin-top: 1px;
+	font-size: 18px;
+	width: 18px;
+	height: 18px;
+	color: var(--jzm-green);
+}
+
+.jezpress-check-info > .dashicons {
+	color: var(--jzm-muted);
+}
+
+.jezpress-check-warn {
+	background: var(--jzm-amber-soft);
+	border-color: var(--jzm-amber-border);
+	color: var(--jzm-amber);
+}
+
+.jezpress-check-warn > .dashicons {
+	color: var(--jzm-amber);
+}
+
+.jezpress-check-bad {
+	background: var(--jzm-red-soft);
+	border-color: var(--jzm-red-border);
+	color: var(--jzm-red-dark);
+}
+
+.jezpress-check-bad > .dashicons {
+	color: var(--jzm-red);
+}
+
+.jezpress-check-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.jezpress-check-label {
+	font-weight: 600;
+}
+
+.jezpress-check-detail {
+	font-size: 12px;
+	color: var(--jzm-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.jezpress-check-warn .jezpress-check-detail,
+.jezpress-check-bad .jezpress-check-detail {
+	color: inherit;
+	opacity: 0.85;
+}
+
+.jezpress-check-link {
+	flex: 0 0 auto;
+	align-self: center;
+	color: inherit;
+	font-weight: 600;
+}
+
+.jezpress-panes {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 16px;
+	margin-bottom: 16px;
+}
+
+.jezpress-pane .jezpress-kv {
+	margin-bottom: 0;
+}
+
+.jezpress-pane .jezpress-kv dd {
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.jezpress-site-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	flex-wrap: wrap;
+}
+
+.jezpress-site-footer p {
+	margin: 0;
+	font-size: 13px;
+	color: var(--jzm-muted);
+}
+
 /* ------------------------------------------------------------------ */
 /* Empty state + footer                                                */
 /* ------------------------------------------------------------------ */
@@ -1061,7 +1235,12 @@
 /* ------------------------------------------------------------------ */
 
 @media (max-width: 1200px) {
-	.jezpress-stats {
+	.jezpress-stats,
+	.jezpress-health-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.jezpress-panes {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 }
@@ -1087,6 +1266,16 @@
 
 	.jezpress-header-actions .jezpress-btn {
 		flex: 1 1 auto;
+		justify-content: center;
+	}
+
+	.jezpress-health-grid,
+	.jezpress-panes {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.jezpress-site-footer .jezpress-btn {
+		width: 100%;
 		justify-content: center;
 	}
 

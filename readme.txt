@@ -4,7 +4,7 @@ Tags: jezpress, dashboard, plugin management, license management
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.1
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -20,6 +20,7 @@ JezPress Manager provides a unified dashboard for all your JezPress plugins. Ins
 * **Updates From One Screen** - See which plugins have updates, update one or all, and switch per-plugin auto-updates, all through WordPress core's own update handlers
 * **Licence Status At A Glance** - Each plugin reports its own licence state (active, expiring, expired, not activated, invalid, no key) with one clear next step; the Manager never stores a key
 * **Support In One Click** - Copy site details for a support request, plus direct contact and quick links
+* **Site Info** - Health checks (HTTPS, REST API, object cache, WP-Cron, updates, WP_DEBUG, PHP, file modifications), WordPress / server / database / constants / theme panes, and a plain-text support report to copy or download
 * **Clean Interface** - Modern, responsive design that integrates with WordPress admin
 
 = For Plugin Developers =
@@ -55,6 +56,16 @@ If you use multiple JezPress plugins, this manager provides a convenient central
 Yes. JezPress plugins are designed to work independently. The manager simply provides a unified interface.
 
 == Changelog ==
+
+= 1.3.0 =
+* New: Site info page - eight health checks (HTTPS, REST API reachable, object cache, WP-Cron firing, plugin updates waiting, WP_DEBUG, PHP support status, plugin updates allowed), WordPress / Server / Database / Constants / Theme and plugins panes, and a JezPress pane (Manager version, plugins, licences reported, updates waiting, registry schema, last update check, cron heartbeat)
+* New: Copy for support puts the whole plain-text report on the clipboard; Download report saves it as a .txt file. Both leave out the fields Site Health marks private, exactly like Site Health's own copy button
+* New: register() accepts four optional keys - license_url (target of the licence action links), license_expires (ISO 8601, takes precedence over license_expiry), update_transient (cleared by Check for updates so the plugin re-checks at once) and license_last_checked (shown on hover of the licence badge and in the support report)
+* New: Check for updates now clears the Manager's own update cache and every registered plugin's update transient before WordPress re-checks
+* New: A daily heartbeat cron event records when WP-Cron last ran, backing the Site info WP-Cron check; removed on deactivation and uninstall, per site on multisite
+* Changed: The dashboard uses wide screens (layout cap raised from 1400px to 1800px)
+* Changed: Other plugins' admin notices are hidden on the Manager's own screens; the row badges, Licences card and Needs attention filter already report the same licence states
+* Changed: The "This site" card links to the full Site info page
 
 = 1.2.0 =
 * New: Redesigned dashboard - header with Check for updates and Update all, attention banner, stat cards (plugins active, updates available, licences, auto-updates), search, a Needs attention filter and a mobile layout
@@ -98,6 +109,9 @@ Yes. JezPress plugins are designed to work independently. The manager simply pro
 * Support and quick links section
 
 == Upgrade Notice ==
+
+= 1.3.0 =
+Adds the Site info page (health checks, server and WordPress details, Copy for support and Download report) and four optional register() keys. No settings change; the registration API is backward compatible.
 
 = 1.2.0 =
 Redesigned dashboard with update actions, richer licence states and a Copy site details button. No settings change; the registration API is backward compatible.

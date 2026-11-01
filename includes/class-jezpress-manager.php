@@ -44,6 +44,42 @@ class JezPress_Manager {
 	const EXPIRING_DAYS = 30;
 
 	/**
+	 * Registration schema version.
+	 *
+	 * 1 = the original register() keys. 2 (1.3.0) adds license_url, license_expires,
+	 * update_transient and license_last_checked. A plugin passing any schema-2 key is
+	 * recorded as schema 2; the Site info page reports fleet adoption from this.
+	 *
+	 * @since 1.3.0
+	 * @var int
+	 */
+	const REGISTRY_SCHEMA = 2;
+
+	/**
+	 * Optional register() keys introduced with schema 2.
+	 *
+	 * @since 1.3.0
+	 * @var string[]
+	 */
+	const SCHEMA_2_FIELDS = array( 'license_url', 'license_expires', 'update_transient', 'license_last_checked' );
+
+	/**
+	 * Daily cron hook whose only job is to prove WP-Cron fires (Site info health check).
+	 *
+	 * @since 1.3.0
+	 * @var string
+	 */
+	const HEARTBEAT_HOOK = 'jezpress_manager_heartbeat';
+
+	/**
+	 * Option holding the Unix time of the last heartbeat run.
+	 *
+	 * @since 1.3.0
+	 * @var string
+	 */
+	const HEARTBEAT_OPTION = 'jezpress_manager_cron_heartbeat';
+
+	/**
 	 * Single instance of the class
 	 *
 	 * @var JezPress_Manager|null
@@ -56,6 +92,14 @@ class JezPress_Manager {
 	 * @var array
 	 */
 	private static $plugins = array();
+
+	/**
+	 * Site info page
+	 *
+	 * @since 1.3.0
+	 * @var JezPress_Manager_Site_Info
+	 */
+	private $site_info;
 
 	/**
 	 * Get the singleton instance
@@ -73,6 +117,7 @@ class JezPress_Manager {
 	 * Constructor
 	 */
 	private function __construct() {
+		$this->site_info = new JezPress_Manager_Site_Info( $this );
 		$this->init_hooks();
 	}
 
@@ -85,6 +130,9 @@ class JezPress_Manager {
 		add_action( 'admin_init', array( $this, 'maybe_redirect_to_dashboard' ) );
 		add_action( 'wp_ajax_jezpress_manager_toggle_plugin', array( $this, 'ajax_toggle_plugin' ) );
 		add_action( 'wp_ajax_jezpress_manager_check_updates', array( $this, 'ajax_check_updates' ) );
+		add_action( 'admin_init', array( $this, 'maybe_schedule_heartbeat' ) );
+		add_action( self::HEARTBEAT_HOOK, array( $this, 'heartbeat' ) );
+		add_action( 'in_admin_header', array( $this, 'suppress_foreign_notices' ) );
 	}
 
 	// ---- Registration API (public contract — additive changes only) ----
@@ -113,24 +161,43 @@ class JezPress_Manager {
 	 *                                    Lets the Manager find the plugin when the slug is not
 	 *                                    the folder name. Default '' (derived from the slug).
 	 *                                    @since 1.2.0
+	 *     @type string   $license_url    URL of the plugin's own licence page/tab. Used for the
+	 *                                    licence action links instead of the settings page.
+	 *                                    Default '' (the settings page). @since 1.3.0
+	 *     @type string   $license_expires Licence expiry as ISO 8601 ('YYYY-MM-DD' or
+	 *                                    'YYYY-MM-DDTHH:MM:SS+10:00'). Takes precedence over
+	 *                                    license_expiry when valid. Default ''. @since 1.3.0
+	 *     @type string   $update_transient Name of the (non-site) transient the plugin's updater
+	 *                                    caches its update-server response in. "Check for
+	 *                                    updates" deletes it so the plugin re-checks at once.
+	 *                                    Default ''. @since 1.3.0
+	 *     @type int|string $license_last_checked When the plugin last validated its licence:
+	 *                                    Unix timestamp or strtotime()-parsable string.
+	 *                                    Default 0. @since 1.3.0
 	 * }
 	 */
 	public static function register( $args ) {
 		$defaults = array(
-			'slug'           => '',
-			'name'           => '',
-			'version'        => '',
-			'menu_title'     => '',
-			'capability'     => 'manage_options',
-			'callback'       => null,
-			'license_status' => '',
-			'license_expiry' => '',
-			'description'    => '',
-			'icon'           => 'dashicons-admin-plugins', // Plugin icon for dashboard.
-			'position'       => 10, // Menu position (lower = higher in list).
-			'plugin_file'    => '', // Plugin basename (since 1.2.0).
+			'slug'                 => '',
+			'name'                 => '',
+			'version'              => '',
+			'menu_title'           => '',
+			'capability'           => 'manage_options',
+			'callback'             => null,
+			'license_status'       => '',
+			'license_expiry'       => '',
+			'description'          => '',
+			'icon'                 => 'dashicons-admin-plugins', // Plugin icon for dashboard.
+			'position'             => 10, // Menu position (lower = higher in list).
+			'plugin_file'          => '', // Plugin basename (since 1.2.0).
+			// Schema 2 (since 1.3.0). The Manager also sets 'supplied' and 'schema' on each entry.
+			'license_url'          => '',
+			'license_expires'      => '',
+			'update_transient'     => '',
+			'license_last_checked' => 0,
 		);
 
+		$args   = wp_parse_args( $args ); // Objects and query strings stay accepted, as before 1.3.0.
 		$plugin = wp_parse_args( $args, $defaults );
 
 		// Sanitize the slug (used in URLs and as array key).
@@ -152,6 +219,16 @@ class JezPress_Manager {
 
 		// Plugin basename: shape-checked here, existence-checked at use time.
 		$plugin['plugin_file'] = self::sanitize_plugin_file( $plugin['plugin_file'] );
+
+		// Schema 2 fields (all optional).
+		$plugin['license_url']          = is_string( $plugin['license_url'] ) ? esc_url_raw( trim( $plugin['license_url'] ) ) : '';
+		$plugin['license_expires']      = self::sanitize_iso_date( $plugin['license_expires'] );
+		$plugin['update_transient']     = self::sanitize_transient_name( $plugin['update_transient'] );
+		$plugin['license_last_checked'] = self::sanitize_timestamp( $plugin['license_last_checked'] );
+
+		// Which optional keys the plugin passed (set by the Manager, not by the caller).
+		$plugin['supplied'] = array_values( array_intersect( array_merge( array( 'plugin_file', 'license_expiry' ), self::SCHEMA_2_FIELDS ), array_keys( $args ) ) );
+		$plugin['schema']   = array_intersect( self::SCHEMA_2_FIELDS, array_keys( $args ) ) ? self::REGISTRY_SCHEMA : 1;
 
 		if ( ! empty( $plugin['slug'] ) ) {
 			self::$plugins[ $plugin['slug'] ] = $plugin;
@@ -257,6 +334,77 @@ class JezPress_Manager {
 		}
 
 		return $file;
+	}
+
+	/**
+	 * Validate an ISO 8601 date ('YYYY-MM-DD', optionally with a time and offset)
+	 *
+	 * @since 1.3.0
+	 *
+	 * @param mixed $value Raw value.
+	 * @return string The trimmed value, or '' when it is not a parsable ISO 8601 date.
+	 */
+	private static function sanitize_iso_date( $value ) {
+		if ( ! is_string( $value ) ) {
+			return '';
+		}
+		$value = trim( $value );
+		if ( '' === $value || strlen( $value ) > 35 ) {
+			return '';
+		}
+		if ( ! preg_match( '/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/', $value, $m ) ) {
+			return '';
+		}
+		// strtotime() would silently roll "2026-02-31" over to March; reject it instead so the
+		// plugin's license_expiry stays the fallback.
+		if ( ! checkdate( (int) $m[2], (int) $m[3], (int) $m[1] ) ) {
+			return '';
+		}
+		if ( isset( $m[4] ) && ( (int) $m[4] > 23 || (int) $m[5] > 59 ) ) {
+			return '';
+		}
+		return false === strtotime( $value ) ? '' : $value;
+	}
+
+	/**
+	 * Validate a transient name (what the plugin passes to get_transient())
+	 *
+	 * Core allows up to 172 characters; only [A-Za-z0-9_-] are accepted here.
+	 *
+	 * @since 1.3.0
+	 *
+	 * @param mixed $value Raw value.
+	 * @return string
+	 */
+	private static function sanitize_transient_name( $value ) {
+		if ( ! is_string( $value ) ) {
+			return '';
+		}
+		$value = trim( $value );
+		if ( '' === $value || strlen( $value ) > 172 || ! preg_match( '/^[A-Za-z0-9_-]+$/', $value ) ) {
+			return '';
+		}
+		return $value;
+	}
+
+	/**
+	 * Coerce a timestamp or date string to a Unix time
+	 *
+	 * @since 1.3.0
+	 *
+	 * @param mixed $value Raw value.
+	 * @return int 0 when unusable.
+	 */
+	private static function sanitize_timestamp( $value ) {
+		if ( is_int( $value ) || is_float( $value ) || ( is_string( $value ) && ctype_digit( trim( $value ) ) ) ) {
+			$time = (int) $value;
+		} elseif ( is_string( $value ) && '' !== trim( $value ) ) {
+			$time = (int) strtotime( trim( $value ) );
+		} else {
+			return 0;
+		}
+		// Reject nonsense: before 2000 or more than a day in the future.
+		return ( $time < 946684800 || $time > time() + DAY_IN_SECONDS ) ? 0 : $time;
 	}
 
 	// ---- Plugin discovery ----
@@ -473,6 +621,16 @@ class JezPress_Manager {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 
+		// Each plugin's updater caches the update-server reply (12 h). Plugins that
+		// register their cache name get it cleared so the re-check below is live.
+		delete_transient( 'jezpress_manager_update_info' );
+		foreach ( self::$plugins as $plugin ) {
+			if ( ! empty( $plugin['update_transient'] ) ) {
+				delete_transient( $plugin['update_transient'] );
+				delete_site_transient( $plugin['update_transient'] ); // Some updaters cache network-wide.
+			}
+		}
+
 		wp_clean_plugins_cache( true );
 		wp_update_plugins();
 
@@ -526,6 +684,8 @@ class JezPress_Manager {
 			array( $this, 'render_dashboard' )
 		);
 
+		$this->site_info->add_menu();
+
 		// Add submenu for each registered plugin (sorted by position).
 		foreach ( self::get_sorted_plugins() as $slug => $plugin ) {
 			if ( ! empty( $plugin['callback'] ) && is_callable( $plugin['callback'] ) ) {
@@ -555,11 +715,127 @@ class JezPress_Manager {
 		}
 	}
 
+	// ---- Heartbeat ----
+
+	/**
+	 * Schedule the daily heartbeat if it is missing (admin_init)
+	 *
+	 * @since 1.3.0
+	 */
+	public function maybe_schedule_heartbeat() {
+		if ( ! wp_next_scheduled( self::HEARTBEAT_HOOK ) ) {
+			wp_schedule_event( time() + MINUTE_IN_SECONDS, 'daily', self::HEARTBEAT_HOOK );
+		}
+	}
+
+	/**
+	 * Record that WP-Cron ran (the only thing the heartbeat does)
+	 *
+	 * @since 1.3.0
+	 */
+	public function heartbeat() {
+		update_option( self::HEARTBEAT_OPTION, time(), false );
+	}
+
+	// ---- Admin notices ----
+
+	/**
+	 * On the Manager's own screens, drop other plugins' admin notices
+	 *
+	 * The row badges, Licences card and Needs-attention filter already report
+	 * every state those licence nags repeat. Core's notices (update nag, maintenance,
+	 * password nag) and the Manager's own stay. Runs on in_admin_header, after the
+	 * screen is known and before admin_notices fires.
+	 *
+	 * @since 1.3.0
+	 */
+	public function suppress_foreign_notices() {
+		global $wp_filter;
+
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( ! $screen || ! in_array( $screen->id, array( 'toplevel_page_' . self::MENU_SLUG, $this->site_info->get_hook() ), true ) ) {
+			return;
+		}
+
+		// Reflection reports resolved paths, so on a symlinked deploy (current -> releases/N)
+		// the real path is compared as well as the configured one.
+		$core = array();
+		foreach ( array( ABSPATH . 'wp-admin/', ABSPATH . WPINC . '/', JEZPRESS_MANAGER_PLUGIN_PATH ) as $root ) {
+			$core[] = wp_normalize_path( $root );
+			$real   = realpath( $root );
+			if ( is_string( $real ) && '' !== $real ) {
+				$core[] = trailingslashit( wp_normalize_path( $real ) );
+			}
+		}
+		$core = array_unique( $core );
+
+		foreach ( array( 'admin_notices', 'all_admin_notices', 'network_admin_notices', 'user_admin_notices' ) as $hook ) {
+			if ( empty( $wp_filter[ $hook ] ) || ! ( $wp_filter[ $hook ] instanceof WP_Hook ) ) {
+				continue;
+			}
+			$remove = array();
+			foreach ( $wp_filter[ $hook ]->callbacks as $priority => $callbacks ) {
+				foreach ( $callbacks as $callback ) {
+					$file = self::callback_file( $callback['function'] );
+					if ( '' === $file ) {
+						continue; // Internal function or unresolvable: leave it.
+					}
+					$keep = false;
+					foreach ( $core as $prefix ) {
+						if ( 0 === strpos( $file, $prefix ) ) {
+							$keep = true;
+							break;
+						}
+					}
+					if ( ! $keep ) {
+						$remove[] = array( $callback['function'], $priority );
+					}
+				}
+			}
+			foreach ( $remove as $item ) {
+				remove_action( $hook, $item[0], $item[1] );
+			}
+		}
+	}
+
+	/**
+	 * File a hook callback is defined in ('' when unknown)
+	 *
+	 * @since 1.3.0
+	 *
+	 * @param mixed $callback Callback as stored by WP_Hook.
+	 * @return string Normalised path or ''.
+	 */
+	private static function callback_file( $callback ) {
+		try {
+			if ( is_string( $callback ) && false !== strpos( $callback, '::' ) ) {
+				$callback = explode( '::', $callback, 2 );
+			}
+			if ( is_array( $callback ) && 2 === count( $callback ) ) {
+				$reflection = new ReflectionMethod( $callback[0], $callback[1] );
+			} elseif ( $callback instanceof Closure || is_string( $callback ) ) {
+				$reflection = new ReflectionFunction( $callback );
+			} elseif ( is_object( $callback ) ) {
+				$reflection = new ReflectionMethod( $callback, '__invoke' );
+			} else {
+				return '';
+			}
+			$file = $reflection->getFileName();
+		} catch ( Throwable $e ) { // ReflectionException, or a TypeError from an odd callable shape.
+			return '';
+		}
+
+		return is_string( $file ) ? wp_normalize_path( $file ) : '';
+	}
+
 	// ---- Dashboard data ----
 
 	/**
 	 * Build everything the dashboard renders from
 	 *
+	 * Public for the Site info page; not part of the registration contract.
+	 *
+	 * @internal
 	 * @since 1.2.0
 	 * @return array {
 	 *     @type array  $rows          One entry per plugin (registered first, then detected inactive).
@@ -571,7 +847,7 @@ class JezPress_Manager {
 	 *     @type string $lock_reason   Why auto-updates are locked, when they are.
 	 * }
 	 */
-	private function get_dashboard_data() {
+	public function get_dashboard_data() {
 		if ( ! function_exists( 'get_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
@@ -608,17 +884,22 @@ class JezPress_Manager {
 
 			$rows[] = $this->build_row(
 				array(
-					'slug'           => $slug,
-					'name'           => $plugin['name'],
-					'description'    => $plugin['description'],
-					'icon'           => $plugin['icon'],
-					'version'        => $plugin['version'],
-					'plugin_file'    => $file,
-					'active'         => true,
-					'registered'     => true,
-					'license_status' => $plugin['license_status'],
-					'license_expiry' => $plugin['license_expiry'],
-					'settings_url'   => $has_page ? admin_url( 'admin.php?page=' . $slug ) : '',
+					'slug'             => $slug,
+					'name'             => $plugin['name'],
+					'description'      => $plugin['description'],
+					'icon'             => $plugin['icon'],
+					'version'          => $plugin['version'],
+					'plugin_file'      => $file,
+					'active'           => true,
+					'registered'       => true,
+					'license_status'   => $plugin['license_status'],
+					// ISO 8601 license_expires (1.3.0) wins over the looser license_expiry.
+					'license_expiry'   => '' !== $plugin['license_expires'] ? $plugin['license_expires'] : $plugin['license_expiry'],
+					'license_url'      => $plugin['license_url'],
+					'license_checked'  => $plugin['license_last_checked'],
+					'update_transient' => $plugin['update_transient'],
+					'supplied'         => $plugin['supplied'],
+					'settings_url'     => $has_page ? admin_url( 'admin.php?page=' . $slug ) : '',
 				),
 				$installed,
 				$responses,
@@ -631,17 +912,21 @@ class JezPress_Manager {
 		foreach ( $this->detect_inactive_jezpress_plugins( $installed, $registered_files ) as $basename => $plugin ) {
 			$rows[] = $this->build_row(
 				array(
-					'slug'           => $plugin['slug'],
-					'name'           => $plugin['name'],
-					'description'    => $plugin['description'],
-					'icon'           => 'dashicons-admin-plugins',
-					'version'        => $plugin['version'],
-					'plugin_file'    => $basename,
-					'active'         => false,
-					'registered'     => false,
-					'license_status' => '',
-					'license_expiry' => '',
-					'settings_url'   => '',
+					'slug'             => $plugin['slug'],
+					'name'             => $plugin['name'],
+					'description'      => $plugin['description'],
+					'icon'             => 'dashicons-admin-plugins',
+					'version'          => $plugin['version'],
+					'plugin_file'      => $basename,
+					'active'           => false,
+					'registered'       => false,
+					'license_status'   => '',
+					'license_expiry'   => '',
+					'license_url'      => '',
+					'license_checked'  => 0,
+					'update_transient' => '',
+					'supplied'         => array(),
+					'settings_url'     => '',
 				),
 				$installed,
 				$responses,
@@ -662,6 +947,7 @@ class JezPress_Manager {
 			'auto_on'    => 0,
 			'attention'  => 0,
 			'untracked'  => 0,
+			'clearable'  => 0,
 		);
 		$counts      = array(
 			'invalid'  => 0,
@@ -697,6 +983,9 @@ class JezPress_Manager {
 				++$stats['registered'];
 				if ( ! $row['installed'] ) {
 					++$stats['untracked'];
+				}
+				if ( '' !== $row['update_transient'] ) {
+					++$stats['clearable'];
 				}
 				$state = $row['license'];
 				if ( $state['counts_active'] ) {
@@ -792,6 +1081,9 @@ class JezPress_Manager {
 
 		// Licence state (registered plugins only — detected-inactive ones report nothing).
 		$row['license'] = $row['registered'] ? $this->get_license_state( $row['license_status'], $row['license_expiry'] ) : null;
+		if ( '' === $row['license_url'] ) {
+			$row['license_url'] = $row['settings_url'];
+		}
 
 		$row['needs_attention'] = ( '' !== $row['new_version'] ) || ( null !== $row['license'] && $row['license']['attention'] );
 
@@ -961,7 +1253,11 @@ class JezPress_Manager {
 			$bits   = array();
 			$bits[] = $row['active'] ? 'active' : 'inactive';
 			if ( null !== $row['license'] ) {
-				$bits[] = 'licence: ' . $row['license']['label'];
+				$bit = 'licence: ' . $row['license']['label'];
+				if ( $row['license_checked'] > 0 ) {
+					$bit .= ' (checked ' . human_time_diff( $row['license_checked'] ) . ' ago)';
+				}
+				$bits[] = $bit;
 			}
 			if ( '' !== $row['new_version'] ) {
 				$bits[] = 'update available: ' . $row['new_version'];
@@ -1222,7 +1518,13 @@ class JezPress_Manager {
 							</table>
 							<p class="jezpress-table-empty" id="jezpress-table-empty" hidden><?php esc_html_e( 'No plugins match.', 'jezpress-manager' ); ?></p>
 							<p class="jezpress-footnote">
-								<?php esc_html_e( 'Check for updates asks WordPress to re-check now. Each plugin answers from its own cache, so versions and licence status can be up to 12 hours old.', 'jezpress-manager' ); ?>
+								<?php
+								if ( $stats['registered'] > 0 && $stats['registered'] === $stats['clearable'] ) {
+									esc_html_e( 'Check for updates clears every plugin\'s update cache and asks WordPress to re-check now.', 'jezpress-manager' );
+								} else {
+									esc_html_e( 'Check for updates asks WordPress to re-check now. Each plugin answers from its own cache, so versions and licence status can be up to 12 hours old.', 'jezpress-manager' );
+								}
+								?>
 							</p>
 						<?php endif; ?>
 					</div>
@@ -1247,7 +1549,10 @@ class JezPress_Manager {
 							<dt><?php esc_html_e( 'Plugins registered', 'jezpress-manager' ); ?></dt>
 							<dd><?php echo esc_html( $stats['registered'] ); ?></dd>
 						</dl>
-						<p class="description"><?php esc_html_e( 'Copy pastes the full report into a support request.', 'jezpress-manager' ); ?></p>
+						<p class="description">
+							<?php esc_html_e( 'Copy pastes the full report into a support request.', 'jezpress-manager' ); ?>
+							<a href="<?php echo esc_url( JezPress_Manager_Site_Info::get_url() ); ?>" class="jezpress-site-info-link"><?php esc_html_e( 'See all site info', 'jezpress-manager' ); ?></a>
+						</p>
 						<textarea id="jezpress-site-report" class="screen-reader-text" readonly tabindex="-1" aria-hidden="true"><?php echo esc_textarea( $this->get_site_report( $data ) ); ?></textarea>
 					</div>
 
@@ -1467,7 +1772,14 @@ class JezPress_Manager {
 					<span class="jezpress-na">&mdash;</span>
 				<?php else : ?>
 					<div class="jezpress-license jezpress-license-<?php echo esc_attr( $state['tone'] ); ?>">
-						<span class="jezpress-license-label">
+						<?php
+						$checked_title = '';
+						if ( $row['license_checked'] > 0 ) {
+							/* translators: %s: human-readable time difference */
+							$checked_title = sprintf( __( 'Licence checked by the plugin %s ago', 'jezpress-manager' ), human_time_diff( $row['license_checked'] ) );
+						}
+						?>
+						<span class="jezpress-license-label" <?php echo '' !== $checked_title ? 'title="' . esc_attr( $checked_title ) . '"' : ''; ?>>
 							<?php if ( 'ok' === $state['tone'] ) : ?>
 								<span class="dashicons dashicons-yes" aria-hidden="true"></span>
 							<?php elseif ( 'danger' === $state['tone'] ) : ?>
@@ -1477,8 +1789,8 @@ class JezPress_Manager {
 							<?php endif; ?>
 							<?php echo esc_html( $state['label'] ); ?>
 						</span>
-						<?php if ( '' !== $state['action'] && '' !== $row['settings_url'] ) : ?>
-							<a href="<?php echo esc_url( $row['settings_url'] ); ?>" class="jezpress-license-action">
+						<?php if ( '' !== $state['action'] && '' !== $row['license_url'] ) : ?>
+							<a href="<?php echo esc_url( $row['license_url'] ); ?>" class="jezpress-license-action">
 								<?php echo esc_html( $state['action'] ); ?>
 								<span class="dashicons dashicons-external" aria-hidden="true"></span>
 							</a>
@@ -1618,7 +1930,9 @@ class JezPress_Manager {
 		wp_enqueue_style( 'jezpress-manager-menu' );
 		wp_add_inline_style( 'jezpress-manager-menu', $this->get_menu_icon_styles() );
 
-		if ( 'toplevel_page_' . self::MENU_SLUG !== $hook ) {
+		$is_dashboard = ( 'toplevel_page_' . self::MENU_SLUG === $hook );
+		$is_site_info = ( '' !== $this->site_info->get_hook() && $this->site_info->get_hook() === $hook );
+		if ( ! $is_dashboard && ! $is_site_info ) {
 			return;
 		}
 
@@ -1629,10 +1943,11 @@ class JezPress_Manager {
 			JEZPRESS_MANAGER_VERSION
 		);
 
-		add_thickbox();
-
-		$can_update = current_user_can( 'update_plugins' );
+		$can_update = $is_dashboard && current_user_can( 'update_plugins' );
 		$deps       = array( 'wp-util' );
+		if ( $is_dashboard ) {
+			add_thickbox();
+		}
 		if ( $can_update ) {
 			// Core's update client: supplies wp.updates.ajax() and the 'updates' nonce.
 			wp_enqueue_script( 'updates' );
